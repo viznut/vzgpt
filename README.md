@@ -23,10 +23,13 @@ use. Alternatively, you can define CONSTS_AS_VARS to support all the
 different parameter sets with the same executable (but this is still
 slightly buggy).
 
+The Makefile uses GCC on a Unix/Linux-type system. If you don't want SDL,
+threading etc., you can disable those parts by editing config.h.
+
 Image-GPT models are also technically supported but there's still bughunting
 to do before they work properly.
 
 TODO:
-- Finish optional INT8 quantization of all the bigger matrices.
+- Finish optional INT8 quantization of all the bigger matrices. (yes, I want to be able to run this on small ARM boards and such)
 - Finish Image-GPT support.
 - Proper configfile.
