@@ -11,7 +11,7 @@ void*readfile(char*fn,int*lgt_ret,char*path)
   if(path)
   {
     //path=alloca(strlen(fn)+strlen(path)+2);
-    snprintf(fnb,"%s/%s",119,path,fn);
+    snprintf(fnb,119,"%s/%s",path,fn);
     pathfn=fnb;
   } else pathfn=fn;
   
