@@ -22,6 +22,8 @@ char wannaquit=0;
 int autorun_delay=200;
 int autorun_nextshot=0;
 
+void ui_refresh();
+
 int utf8inc(unsigned char*s)
 {
   if(*s<=0x7f) return 1;

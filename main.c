@@ -336,7 +336,7 @@ int tokenize_image(char*fn)
   int ctxdim=sqrt(CTXSIZE);
   int i,j,w,h;
   SDL_Surface*img=IMG_Load(fn);
-  if(!img) return;
+  if(!img) return 0;
   fprintf(stderr,"loading image %s: %d x %d",fn,img->w,img->h);
   w=img->w; if(w>ctxdim) w=ctxdim;
   h=img->h; if(h>ctxdim) h=ctxdim;
