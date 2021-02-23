@@ -38,3 +38,5 @@
 //#define Q8MODE_OUTWTE
 //#define Q8MODE_MLP
 */
+
+#define USE_PKDFLT

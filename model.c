@@ -1,5 +1,44 @@
 #include "common.h"
 
+/* option: we can use 16-bit "packed floats" for the big matrices */
+
+#ifdef USE_PKDFLT
+typedef uint16_t pkdflt;
+
+inline pkdflt PKFLT(float s)
+{
+  uint32_t a=*((uint32_t*)&s);
+  if(!(a&0x8000)) return a>>16;
+  a>>=16;
+  if((a&0x7f)==0x7f) return a; // don't overflow mantissa
+  return a+1;
+}
+
+inline float UNPKFLT(pkdflt s)
+{
+  uint32_t a=s;
+  // format: bfloat16
+  a=(a<<16);//|0x8000;//a;
+  return *((float*)&a);
+}
+
+float*packtensor(float*s,int lgt)
+{
+  int i;
+  pkdflt*o=malloc(lgt*sizeof(pkdflt));
+  for(i=0;i<lgt;i++)
+    o[i]=PKFLT(s[i]);
+  free(s);
+  return(float*)o;
+}
+#else
+typedef float pkdflt;
+#define UNPKFLT(s) (s)
+#define PKFLT(s) (s)
+#endif
+
+/* some matrices are transposed after loading */
+
 float*transpose(float*m,int w,int h)
 {
   int i,j;
@@ -10,6 +49,8 @@ float*transpose(float*m,int w,int h)
   free(m);
   return o;
 }
+
+/* here we load the model from separate raw files */
 
 void loadmodel(char*path)
 {
@@ -145,6 +186,13 @@ void loadmodel(char*path)
     layers[i].mlp_cproj_w =
       transpose(layers[i].mlp_cproj_w,WVSIZE,WVSIZE*4);
 
+#ifdef USE_PKDFLT
+    layers[i].attn_cattn_w=packtensor(layers[i].attn_cattn_w,WVSIZE*3*WVSIZE);
+    layers[i].attn_cproj_w=packtensor(layers[i].attn_cproj_w,WVSIZE*WVSIZE);
+    layers[i].mlp_cfc_w=packtensor(layers[i].mlp_cfc_w,WVSIZE*WVSIZE*4);
+    layers[i].mlp_cproj_w=packtensor(layers[i].mlp_cproj_w,WVSIZE*WVSIZE*4);
+#endif
+
     layers[i].k=malloc(CTXSIZE*WVSIZE*sizeof(float));
     layers[i].v=malloc(CTXSIZE*WVSIZE*sizeof(float));
   }
@@ -181,6 +229,8 @@ float statistics(float*m,int sz)
   return muller;
 }
 
+/* experimental: quantize some matrices into 8-bit integer format */
+
 #ifdef QUANTIZE
 void quantize_matrix_fake(int8_t*m8,float*m,float muller,int sz)
 {
@@ -214,7 +264,6 @@ void quantize()
 
   for(i=0;i<NUMLAYERS;i++)
   {
-
     layers[i].mlp_cfc8w=malloc(WVSIZE*WVSIZE*4);
     layers[i].mlp_cproj8w=malloc(WVSIZE*WVSIZE*4);
     layers[i].mlp_cfc8b=malloc(WVSIZE*4);
@@ -291,6 +340,17 @@ inline float conv1dline(float a,float*v,float*m,int wdt)
   return a;
 }
 
+#ifdef USE_PKDFLT
+inline float conv1dline_pkd(float a,float*v,pkdflt*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*UNPKFLT(m[i]);
+  return a;
+}
+#else
+#define conv1dline_pkd conv1dline
+#endif
+
 #define MAXNUMTHR 8
 struct
 {
@@ -338,10 +398,10 @@ void runLayer(float*x,int layeridx,int here,int thr,int numthr)
 
   /* produce query/key/value vectors for this slot */
   {float*b=l->attn_cattn_b;
-   float*w=l->attn_cattn_w;
+   pkdflt*w=(pkdflt*)l->attn_cattn_w;
   for(i=thr;i<WVSIZE*3;i+=numthr)
   {
-    float a=conv1dline(b?b[i]:0,xn,w+WVSIZE*i,WVSIZE);
+    float a=conv1dline_pkd(b?b[i]:0,xn,w+WVSIZE*i,WVSIZE);
     if(i<WVSIZE)
       q[i]=a;
     else if(i<WVSIZE*2)
@@ -395,10 +455,10 @@ void runLayer(float*x,int layeridx,int here,int thr,int numthr)
   if(verbose>=3) fprintf(stderr,"project...\n",layeridx);
 
   /* projection (WVSIZExWVSIZE) */
-  {float*w=l->attn_cproj_w;
+  {pkdflt*w=(pkdflt*)l->attn_cproj_w;
    float*b=l->attn_cproj_b;
    for(i=thr;i<WVSIZE;i+=numthr)
-      x[i]+=conv1dline(b?b[i]:0,tmp,w+WVSIZE*i,WVSIZE);
+      x[i]+=conv1dline_pkd(b?b[i]:0,tmp,w+WVSIZE*i,WVSIZE);
   }
 
   syncthreads();
@@ -415,14 +475,14 @@ void runLayer(float*x,int layeridx,int here,int thr,int numthr)
   if(verbose>=3) fprintf(stderr,"mlp...\n",layeridx);
 
   /* multilayer perceptron (WVSIZE -> WVSIZE*4 -> WVSIZE) */
-  {float*w=l->mlp_cfc_w;
+  {pkdflt*w=(pkdflt*)l->mlp_cfc_w;
    float*b=l->mlp_cfc_b;
 #ifndef HAVE_THREADS
    float mlp[WVSIZE*4];
 #endif
    for(i=thr;i<WVSIZE*4;i+=numthr)
    {
-     float a=conv1dline(b?b[i]:0,xn,w+WVSIZE*i,WVSIZE);
+     float a=conv1dline_pkd(b?b[i]:0,xn,w+WVSIZE*i,WVSIZE);
      if(!palette) a=0.5*a*(1+tanh(0.7978845676080871*(a+0.044715*a*a*a)));
              else a=a*(1/(1+exp(-a*1.702))); // gelu2 (igpt)
 #ifdef QUANTIZE
@@ -433,10 +493,10 @@ void runLayer(float*x,int layeridx,int here,int thr,int numthr)
    }
 
    syncthreads();
-   w=l->mlp_cproj_w;
+   w=(pkdflt*)l->mlp_cproj_w;
    b=l->mlp_cproj_b;
    for(i=thr;i<WVSIZE;i+=numthr)
-     x[i]+=conv1dline(b?b[i]:0,mlp,w+WVSIZE*4*i,WVSIZE*4);
+     x[i]+=conv1dline_pkd(b?b[i]:0,mlp,w+WVSIZE*4*i,WVSIZE*4);
   }
 }
 

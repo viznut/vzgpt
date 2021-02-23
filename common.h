@@ -20,6 +20,8 @@ global int NUMLAYERS;
 global int NUMHEADS;
 #endif
 
+typedef uint16_t token_t;
+
 typedef struct{
   /* constants (network parameters) */
   float*ln1_b,*ln1_g,*ln2_b,*ln2_g,
@@ -42,8 +44,17 @@ typedef struct{
 typedef struct
 {
   float prob;
-  int tok;
+  token_t tok;
 } match_t;
+
+typedef struct
+{
+  token_t*in;
+  float*k;
+  float*v;
+  int lgt;
+  int validlgt;
+} context_t;
 
 /* vocabulary & word vector handling */
 global int numtokens;
@@ -54,10 +65,11 @@ global match_t*matchlist;  /* alloc in init() */
 global char*tokenflags;    /* alloc in loadtokens() */
 global float**userwte;     /* alloc in ui_init() */
 global float*targetwv;
-global int emptytoken;     /* set in init() */
+global token_t emptytoken; /* set in init() */
 
 /* context buffer */
-global int*context;        /* alloc in init() */
+global token_t*context;    /* alloc in init() */
+// ^ todo global context_t*context;
 global volatile int currslot;
 global volatile int genstart;
 global volatile int genend;

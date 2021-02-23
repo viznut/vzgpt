@@ -268,7 +268,6 @@ void init(char*modelpath)
 #endif
 }
 
-#if (0)
 float*buildcustomwv(char*fn)
 {
   float*wv;
@@ -315,7 +314,6 @@ float*buildcustomwv(char*fn)
   free(s0);
   return wv;
 }
-#endif
 
 int matchcolortopalette(int r,int g,int b)
 {
@@ -365,17 +363,6 @@ int handlesignal(int s)
   return 0;
 }
 #endif
-
-volatile pthread_t fnorp;
-void*uirunthread(void*arg)
-{
-  ui_run();
-}
-void ui_run_()
-{
-  pthread_create(&fnorp,NULL,uirunthread,NULL);
-  pthread_join(fnorp,NULL);
-}
 
 int main(int argc,char**argv)
 {
@@ -467,9 +454,10 @@ int main(int argc,char**argv)
   srand(seed);
 /*
   TODO proper configfile
+*/
   if(configfile) targetwv=buildcustomwv(configfile);
   targetwv=NULL;
-*/
+
   if(promptfile && !palette)
     prompt=readtextfile(promptfile,NULL);
 
