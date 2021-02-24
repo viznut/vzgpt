@@ -22,13 +22,29 @@ global int NUMHEADS;
 
 typedef uint16_t token_t;
 
+#ifndef USE_PKDFLT
+typedef float pkdflt;
+#else
+#ifdef USE_NATIVE_FP16
+typedef __fp16 pkdflt;
+#else
+typedef uint16_t pkdflt;
+#endif
+#endif
+
+#ifdef USE_PKD_WTE
+typedef int16_t wte_t;
+#else
+typedef float wte_t;
+#endif
+
 typedef struct{
   /* constants (network parameters) */
-  float*ln1_b,*ln1_g,*ln2_b,*ln2_g,
-       *mlp_cfc_b,*mlp_cfc_w,
-       *mlp_cproj_b,*mlp_cproj_w,
-       *attn_cattn_b,*attn_cattn_w,
-       *attn_cproj_b,*attn_cproj_w;
+  float*ln1_b,*ln1_g,*ln2_b,*ln2_g;
+  float*mlp_cfc_b;    pkdflt*mlp_cfc_w;
+  float*mlp_cproj_b;  pkdflt*mlp_cproj_w;
+  float*attn_cattn_b; pkdflt*attn_cattn_w;
+  float*attn_cproj_b; pkdflt*attn_cproj_w;
 #ifdef QUANTIZE
   /* 8-bit versions of the network parameters */
   int8_t*mlp_cproj8w,*mlp_cfc8w,
@@ -47,6 +63,7 @@ typedef struct
   token_t tok;
 } match_t;
 
+/* not used yet! we'll support several simultaneous contexts in the future */
 typedef struct
 {
   token_t*in;
@@ -60,12 +77,12 @@ typedef struct
 global int numtokens;
 global int nummodeltokens;
 global char**tokenstrings; /* alloc in loadtokens() */
-global float*currwv;       /* alloc in init() */
+global float*currwv;      /* alloc in init() */
 global match_t*matchlist;  /* alloc in init() */
 global char*tokenflags;    /* alloc in loadtokens() */
-global float**userwte;     /* alloc in ui_init() */
 global float*targetwv;
 global token_t emptytoken; /* set in init() */
+global char*tokendata;     /* alloc in loadtokens() */
 
 /* context buffer */
 global token_t*context;    /* alloc in init() */
@@ -76,25 +93,32 @@ global volatile int genend;
 
 /* model */
 global char*modelpath;
-global float*wte;
-global int8_t*wte8;
-global float*wpe;
-global int8_t*wpe8;
+global wte_t*wte;
+global pkdflt*wpe;
+global wte_t**userwte;    /* alloc in ui_init() */
+global wte_t*wtet;
+global wte_t*sos;
 global hlayer*layers;
 global float*lnf_b;
 global float*lnf_g;
+#ifdef QUANTIZE
+global int8_t*wte8;
+global int8_t*wpe8;
+#endif
 /* igpt extras */
-global float*wtet;
-global float*sos;
 global float*palette;
 
 /* quantization extras */
 #ifdef QUANTIZE
-global float quanter_wte;
 global float quanter_wpe;
 #else
-#define quanter_wte 1.0
 #define quanter_wpe 1.0
+#endif
+
+#ifdef USE_PKD_WTE
+global float quanter_wte;
+#else
+#define quanter_wte 1.0
 #endif
 
 /* settings */
@@ -137,10 +161,89 @@ void renderwordvec(float*wv0,int x0,int y0,int dim);
 void renderlayernode(float*wv,float*att,int numheads,int x0,int y0);
 void matchToTokens(float*wv,match_t*o,int num,float temp);
 int pickmatch(match_t*list,int sz,float minp);
-float*getwv(int token);
+wte_t*getwv(int token);
 void clearcontext(int i);
 void purgeoldcontext(int p);
 
 /*inline float conv1dline(float a,float*v,float*m,int wdt);*/
 
 #define frand() ((rand()&65535)/65536.0)
+
+/*** types and conversion macros for packed floats ***/
+
+#ifndef USE_PKDFLT
+#define UNPKFLT(s) (s)
+#define PKFLT(s) (s)
+
+#else
+#ifdef USE_NATIVE_FP16
+#define UNPKFLT(s) (s)
+#define PKFLT(s) (s)
+#define packtensor(s,lgt) (s)
+
+#else
+typedef uint16_t pkdflt;
+
+inline pkdflt PKFLT(float s)
+{
+  uint32_t a=*((uint32_t*)&s);
+  if(!(a&0x8000)) return a>>16;
+  a>>=16;
+  if((a&0x7f)==0x7f) return a; // don't overflow mantissa
+  return a+1;
+}
+
+inline float UNPKFLT(pkdflt s)
+{
+  uint32_t a=s;
+  // format: bfloat16
+  a=(a<<16);//|0x8000;//a;
+  return *((float*)&a);
+}
+#endif
+#endif
+
+#define UNPKWTE(a) (a/quanter_wte)
+
+/* innerloop of matrix multiplication (or "1d convolution").
+ * this is where most of the computation takes place.
+ */
+
+inline float conv1dline(float a,float*v,float*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*m[i];
+  return a;
+}
+
+#ifdef USE_PKDFLT
+inline float conv1dline_pkd(float a,float*v,pkdflt*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*UNPKFLT(m[i]);
+  return a;
+}
+#else
+#define conv1dline_pkd conv1dline
+#endif
+
+inline int64_t conv1dline_pkdwte(int64_t a,int32_t*v,wte_t*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*m[i];
+  return a;
+}
+
+inline int conv1dline_ii(int a,int8_t*v,int8_t*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*m[i];
+  return a;
+}
+
+inline int conv1dline_fi(float a,float*v,int8_t*m,int wdt)
+{
+  int i;
+  for(i=0;i<wdt;i++) a+=v[i]*m[i];
+  return a;
+}

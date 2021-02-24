@@ -132,6 +132,14 @@ void renderwordvec(float*wv0,int x0,int y0,int dim)
   }
 }
 
+void renderwordvec_pkd(pkdflt*wv0,int x0,int y0,int dim)
+{
+  float wv[WVSIZE];
+  int i;
+  for(i=0;i<WVSIZE;i++) wv[i]=UNPKFLT(wv0[i]);
+  renderwordvec(wv,x0,y0,dim);
+}
+
 void renderlayernode(float*wv0,float*att,int numheads,int x0,int y0)
 {
   int i,j,x,y;

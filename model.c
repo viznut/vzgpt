@@ -1,42 +1,5 @@
 #include "common.h"
 
-/* option: we can use 16-bit "packed floats" for the big matrices */
-
-#ifdef USE_PKDFLT
-typedef uint16_t pkdflt;
-
-inline pkdflt PKFLT(float s)
-{
-  uint32_t a=*((uint32_t*)&s);
-  if(!(a&0x8000)) return a>>16;
-  a>>=16;
-  if((a&0x7f)==0x7f) return a; // don't overflow mantissa
-  return a+1;
-}
-
-inline float UNPKFLT(pkdflt s)
-{
-  uint32_t a=s;
-  // format: bfloat16
-  a=(a<<16);//|0x8000;//a;
-  return *((float*)&a);
-}
-
-float*packtensor(float*s,int lgt)
-{
-  int i;
-  pkdflt*o=malloc(lgt*sizeof(pkdflt));
-  for(i=0;i<lgt;i++)
-    o[i]=PKFLT(s[i]);
-  free(s);
-  return(float*)o;
-}
-#else
-typedef float pkdflt;
-#define UNPKFLT(s) (s)
-#define PKFLT(s) (s)
-#endif
-
 /* some matrices are transposed after loading */
 
 float*transpose(float*m,int w,int h)
@@ -47,6 +10,18 @@ float*transpose(float*m,int w,int h)
   for(j=0;j<w;j++)
     o[j*h+i]=m[i*w+j];
   free(m);
+  return o;
+}
+
+/* some matrices are packed into more compact float formats */
+
+pkdflt*packtensor(float*s,int lgt)
+{
+  int i;
+  pkdflt*o=malloc(lgt*sizeof(pkdflt));
+  for(i=0;i<lgt;i++)
+    o[i]=PKFLT(s[i]);
+  free(s);
   return o;
 }
 
@@ -79,17 +54,48 @@ void loadmodel(char*path)
 #endif  
   lnf_b=(float*)readfile("lnf_b.raw",&sz,path);
 
-  wte=(float*)readfile("wte.raw",&sz,path);
+  wte=(wte_t*)readfile("wte.raw",&sz,path);
   numtokens=sz/(WVSIZE*sizeof(float));
   fprintf(stderr,"vocabulary size: %d wordvecs\n",numtokens);
-  wpe=(float*)readfile("wpe.raw",&sz,path);
+  wpe=(pkdflt*)readfile("wpe.raw",&sz,path);
   if(sz!=CTXSIZE*WVSIZE*sizeof(float))
   {
     fprintf(stderr,"wpe size mismatch!\n");
     exit(1);
   }
-  wtet=(float*)readfile("wtet.raw",&sz,path); // igpt-only
-  sos=(float*)readfile("sos.raw",&sz,path); // igpt-only
+  wtet=(pkdflt*)readfile("wtet.raw",&sz,path); // igpt-only
+  sos=(pkdflt*)readfile("sos.raw",&sz,path); // igpt-only
+#ifdef USE_PKDFLT
+  wpe=packtensor((float*)wpe,CTXSIZE*WVSIZE);
+#endif
+
+  /* bfloat16 causes regression in wte, so we use 16-bit ints there */
+#ifdef USE_PKD_WTE
+  {
+  float max=0;
+  float avg=0;
+  for(i=0;i<numtokens*WVSIZE;i++)
+  {
+    float a=fabs(((float*)wte)[i]);
+    //avg+=a;
+    if(a>max) max=a;
+    //uint32_t a=((uint32_t*)wte)[i];
+    //a&=0xfffffe00;
+    //((uint32_t*)wte)[i]=a;
+  }
+  //avg/=(numtokens*WVSIZE);
+  //fprintf(stderr,"wte max %f avg %f\n",max,avg);
+  quanter_wte=32767.5/max;
+  wte_t*qwte=malloc(numtokens*WVSIZE*sizeof(wte_t));
+  for(i=0;i<numtokens*WVSIZE;i++)
+  {
+    int a=floor(((float*)wte)[i]*quanter_wte);
+    qwte[i]=a;
+  }
+  free(wte);
+  wte=qwte;
+  }
+#endif
 
   for(i=0;i<MAXNUMLAYERS;i++)
   {
@@ -187,12 +193,11 @@ void loadmodel(char*path)
       transpose(layers[i].mlp_cproj_w,WVSIZE,WVSIZE*4);
 
 #ifdef USE_PKDFLT
-    layers[i].attn_cattn_w=packtensor(layers[i].attn_cattn_w,WVSIZE*3*WVSIZE);
-    layers[i].attn_cproj_w=packtensor(layers[i].attn_cproj_w,WVSIZE*WVSIZE);
-    layers[i].mlp_cfc_w=packtensor(layers[i].mlp_cfc_w,WVSIZE*WVSIZE*4);
-    layers[i].mlp_cproj_w=packtensor(layers[i].mlp_cproj_w,WVSIZE*WVSIZE*4);
+    layers[i].attn_cattn_w=packtensor((float*)layers[i].attn_cattn_w,WVSIZE*3*WVSIZE);
+    layers[i].attn_cproj_w=packtensor((float*)layers[i].attn_cproj_w,WVSIZE*WVSIZE);
+    layers[i].mlp_cfc_w=packtensor((float*)layers[i].mlp_cfc_w,WVSIZE*WVSIZE*4);
+    layers[i].mlp_cproj_w=packtensor((float*)layers[i].mlp_cproj_w,WVSIZE*WVSIZE*4);
 #endif
-
     layers[i].k=malloc(CTXSIZE*WVSIZE*sizeof(float));
     layers[i].v=malloc(CTXSIZE*WVSIZE*sizeof(float));
   }
@@ -207,7 +212,6 @@ void loadmodel(char*path)
     exit(1);
   }
 #endif
-
 }
 
 float statistics(float*m,int sz)
@@ -307,6 +311,8 @@ void quantize()
 }
 #endif
 
+/* math helper functions */
+
 #define EPSILON 0.0000001
 void normalize(float*o,float*x,float*b,float*g)
 {
@@ -333,25 +339,9 @@ void normalize(float*o,float*x,float*b,float*g)
       o[i] = (x[i]-mean)*muller*g[i];
 }
 
-inline float conv1dline(float a,float*v,float*m,int wdt)
-{
-  int i;
-  for(i=0;i<wdt;i++) a+=v[i]*m[i];
-  return a;
-}
+/* globals for multithreading */
 
-#ifdef USE_PKDFLT
-inline float conv1dline_pkd(float a,float*v,pkdflt*m,int wdt)
-{
-  int i;
-  for(i=0;i<wdt;i++) a+=v[i]*UNPKFLT(m[i]);
-  return a;
-}
-#else
-#define conv1dline_pkd conv1dline
-#endif
-
-#define MAXNUMTHR 8
+#ifdef HAVE_THREADS
 struct
 {
   volatile pthread_t t[MAXNUMTHR];
@@ -365,7 +355,6 @@ struct
   float*mlp;
 }thrglob;
 
-#ifdef HAVE_THREADS
 void syncthreads()
 {
   if(thrglob.numthr<=1) return;
@@ -374,6 +363,8 @@ void syncthreads()
 #else
 #define syncthreads()
 #endif
+
+/* from here on: the code that actually implements the model */
 
 void runLayer(float*x,int layeridx,int here,int thr,int numthr)
 {
@@ -505,19 +496,30 @@ void*perthread(void*args);
 void runModel(float*x,int slot)
 {
   int i,j;
+#ifdef HAVE_THREADS
   thrglob.numthr=numthreads;
+#endif
 
   /* get the token's wordvector (wte) + positional salt (wpe) */
   int tok=slot<0?emptytoken:context[slot];
-  float*wv=getwv(tok);
+  wte_t*wv=getwv(tok);
   if(slot<0) slot=0;
 
   for(i=0;i<WVSIZE;i++)
   {
 #ifdef Q8MODE_INWTE
-    x[i]=wpe8[i+WVSIZE*(slot+0)]/quanter_wpe+wte8[i+WVSIZE*tok]/quanter_wte;
+    x[i]=wpe8[i+WVSIZE*slot]/quanter_wpe+wte8[i+WVSIZE*tok]/quanter_wte;
 #else
-    x[i]=wpe[i+WVSIZE*(slot+0)]/quanter_wpe+wv[i]/quanter_wte;
+#ifdef USE_PKDFLT
+    x[i]=UNPKFLT(wpe[i+WVSIZE*slot])/quanter_wpe;
+#else
+    x[i]=wpe[i+WVSIZE*slot]/quanter_wpe;
+#endif
+#ifdef USE_PKD_WTE
+    x[i]+=((float)wv[i])/quanter_wte; // UNPKFLT(wv[i])/quanter_wte;
+#else
+    x[i]+=wv[i]/quanter_wte;
+#endif
 #endif
   }
 
@@ -541,6 +543,7 @@ void runModel(float*x,int slot)
 #ifdef HAVE_THREADS
   } else
   {
+    if(numthreads>MAXNUMTHR) numthreads=MAXNUMTHR;
     thrglob.x=x;
     thrglob.slot=slot;
     thrglob.numthr=numthreads;

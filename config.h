@@ -16,7 +16,7 @@
 #define DEFAULT_SCRW 640
 #define DEFAULT_SCRH 480
 
-/* these are constant in all gpt-2 networks i've seen */
+/* these are constant in all gpt-2 networks i've seen so far */
 #define CTXSIZE 1024
 #define HEADSIZE 64
 #define RSQRT_HEADSIZE (1/8.0)
@@ -32,6 +32,11 @@
 #define NUMHEADS 12
 #endif
 
+/* Use packed floats for those matrices where it doesn't cause regression: */
+#define USE_PKDFLT
+/* Quantize WTE matrix into int16 (~no regression): */
+#define USE_PKD_WTE
+
 /* 8-bit quantization is work-in-progress
 //#define QUANTIZE
 //#define Q8MODE_INWTE
@@ -39,4 +44,5 @@
 //#define Q8MODE_MLP
 */
 
-#define USE_PKDFLT
+/* maximum number of threads to support */
+#define MAXNUMTHR 8

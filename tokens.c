@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "common.h"
 
-char*tokendata;
+/*** load the token dictionary (for normal text-based gpt-2 models) ***/
 
 int loadtokens(char*path)
 {
@@ -12,7 +12,7 @@ int loadtokens(char*path)
   tokendata=(char*)readfile("tokens.dat",&tokendatalgt,path);
   if(!tokendata)
   {
-    fprintf(stderr,"couldn't find tokens.dat...\n");
+    fprintf(stderr,"couldn't load tokens.dat...\n");
     return 1;
   }
 
@@ -37,6 +37,8 @@ int loadtokens(char*path)
   fprintf(stderr,"%d tokens retrieved\n",i);
   return 0;
 }
+
+/*** load the color palette (for imagegpt models) ***/
 
 int loadpalette(char*path)
 {
@@ -78,27 +80,30 @@ int loadpalette(char*path)
   return 0;
 }
 
+/*** helper functions ***/
+
+// TODO fix for PKD
 int allocusertoken(float*wv,char*name)
 {
   int tok;
   if(numtokens>=nummodeltokens+MAXUSERTOKENS) return -1;
   tok=numtokens;
   numtokens++;
-  userwte[tok-nummodeltokens]=malloc(WVSIZE*sizeof(float));
+  userwte[tok-nummodeltokens]=malloc(WVSIZE*sizeof(pkdflt));
   tokenstrings[tok]=strdup(name?name:"UNNAMED");
   tokenstrings[tok+1]=NULL;
   memcpy(&userwte[tok-nummodeltokens],wv,WVSIZE*sizeof(float));
   return tok;
 }
 
-float*getwv(int token)
+wte_t*getwv(int token)
 {
-  if(token<0 || token>=numtokens) return sos; // ?sos:NULL;
+  if(token<0 || token>=numtokens) return sos;
   if(token<nummodeltokens) return wte+WVSIZE*token;
   return userwte+WVSIZE*(token-nummodeltokens);
 }
 
-float*getwv_final(int token)
+wte_t*getwv_final(int token)
 {
   if(!wtet) return getwv(token);
   if(token<0 || token>=numtokens) return sos;
@@ -178,27 +183,7 @@ void dumpwvstats(float*wv)
   fprintf(stderr,"\nmean %f min %f max %f\n",mean,min,max);
 }
 
-inline float conv1dline(float a,float*v,float*m,int wdt)
-{
-  int i;
-  for(i=0;i<wdt;i++) a+=v[i]*m[i];
-  return a;
-}
-
-inline int conv1dline_ii(int a,int8_t*v,int8_t*m,int wdt)
-{
-  int i;
-  for(i=0;i<wdt;i++) a+=v[i]*m[i];
-  return a;
-}
-
-inline int conv1dline_fi(float a,float*v,int8_t*m,int wdt)
-{
-  int i;
-  for(i=0;i<wdt;i++) a+=v[i]*m[i];
-  return a;
-}
-
+#if (0)
 #define CRUNCHSZ 256
 void crunchvector(float*o,float*v,int lgt)
 {
@@ -210,76 +195,60 @@ void crunchvector(float*o,float*v,int lgt)
     o[i]=a;
   }
 }
+#endif
 
 int (matchToTokens_cmp)(const void*a,const void*b)
 {
   return (((match_t*)b)->prob < ((match_t*)a)->prob) ? -1:1;
 }
 
+/*** matches a word vector against the token dictionary ***/
+
 // optimization todo: wte_min (uses vec16) jolla top-80 tms sortattavaksi
 void matchToTokens(float*wv,match_t*o,int num,float temp) // outputs tuples of (dist,token)
 {
   int i,j;
   match_t*t=malloc(sizeof(match_t)*numtokens);
-/*
-  float wvww[CRUNCHSZ];
-  float*ww=malloc(CRUNCHSZ*sizeof(float)*numtokens);
-  for(i=0;i<numtokens;i++)
-  {
-    crunchvector(&ww[CRUNCHSZ*i],getwv(i),WVSIZE);
-  }
-*/
-  int8_t wv8[WVSIZE];
-  float wvv[WVSIZE];
+
+#ifdef USE_PKD_WTE
+  int32_t wv32[WVSIZE];
   for(i=0;i<WVSIZE;i++)
   {
-    float a=wv[i]*quanter_wte; // safe
-    wvv[i]=a;
-    if(a<-128)a=-128;
-    if(a>127)a=127;
-    wv8[i]=a;
+    int64_t a=wv[i]*quanter_wte; // safe
+    wv32[i]=a;
+    //if(a<-128)a=-128;
+    //if(a>127)a=127;
+    //wv8[i]=a;
   }
-
-/*
-  crunchvector(wvww,wvv,WVSIZE);
-
-  // "top_k" phase
-  for(j=0;j<numtokens;j++)
-  {
-    float*compwv=ww+j*CRUNCHSZ;
-#ifdef Q8MODE_OUTWTE
-    int cossim=conv1dline_ii(0,wv8,wte8+j*WVSIZE,8);
-#else
-    float cossim=conv1dline(0,compwv,wvww,CRUNCHSZ);
 #endif
-    t[j*2]=cossim;
-    t[j*2+1]=j; // *(((int*)&t[j*2+1]))=
-  }
-  qsort(t,numtokens,sizeof(float)*2,matchToTokens_cmp);
-*/
 
   // "top_s" phase
   for(i=0,j=0;j<numtokens;j++)
   {
     if(tokenflags[j]>=0)
     {
-      float*compwv=getwv_final(j);
+      wte_t*compwv=getwv_final(j);
 #ifdef Q8MODE_OUTWTE
       int cossim=conv1dline_ii(0,wv8,wte8+j*WVSIZE,WVSIZE);
 #else
+#ifdef USE_PKD_WTE
+      int64_t cossim=conv1dline_pkdwte(0,wv32,compwv,WVSIZE);
+#else
       float cossim=conv1dline(0,wv,compwv,WVSIZE);
+#endif
 #endif
       t[i].prob=cossim/(temp*quanter_wte*quanter_wte);
       t[i].tok=j;
-      i++; 
+      i++;
     }
     //t[j*2+1]=j; // *(((int*)&t[j*2+1]))=
   }
 //  for(i=0;i<512;i++) fprintf(stderr,"%f ",t[i*2]);
 //  fprintf(stderr,"\n");
 
-  qsort(t,i,sizeof(float)*2,matchToTokens_cmp);
- 
+  qsort(t,i,sizeof(match_t),matchToTokens_cmp);
+
+#if (0)
   if(targetwv)
   {
     for(i=0;i<num;i++)
@@ -289,13 +258,14 @@ void matchToTokens(float*wv,match_t*o,int num,float temp) // outputs tuples of (
     }
     qsort(t,i,sizeof(match_t),matchToTokens_cmp);
   }
+#endif
   
 //  for(i=0;i<num;i++)
 //  {
 //    if(tokenflags[(int)(t[i*2+1])]>0) t[i*2]=(t[i*2]*3+t[0])/4.0;
 //  }
 
-  // softmax  
+  // softmax
   float max=t[0].prob;
   for(i=1;i<num;i++) if(t[i].prob>max) max=t[i].prob;
   float sum=0;
@@ -313,6 +283,10 @@ void matchToTokens(float*wv,match_t*o,int num,float temp) // outputs tuples of (
   }
   free(t);
 }
+
+/* picks a random match from the match list.
+ * tokenflags[] allows for some token-specific options.
+ */
 
 int pickmatch_(match_t*list,int sz,float minp)
 {

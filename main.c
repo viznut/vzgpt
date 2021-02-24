@@ -154,7 +154,7 @@ void findbranches(char*prompt,int num,int maxlgt)
   */
   }
 }
-
+#endif
 void iqtest()
 {
   float score=0;
@@ -173,7 +173,7 @@ void iqtest()
   score+=testquestion(" 2 + 3 ="," 5");
   fprintf(stderr,"Total score: %f\n",score);
 }
-#endif
+
 
 void benchmark(char*prompt,int lgt)
 {
@@ -268,6 +268,7 @@ void init(char*modelpath)
 #endif
 }
 
+#if (0)
 float*buildcustomwv(char*fn)
 {
   float*wv;
@@ -314,6 +315,7 @@ float*buildcustomwv(char*fn)
   free(s0);
   return wv;
 }
+#endif
 
 int matchcolortopalette(int r,int g,int b)
 {
@@ -455,13 +457,15 @@ int main(int argc,char**argv)
 /*
   TODO proper configfile
 */
-  if(configfile) targetwv=buildcustomwv(configfile);
+//  if(configfile) targetwv=buildcustomwv(configfile);
   targetwv=NULL;
 
   if(promptfile && !palette)
     prompt=readtextfile(promptfile,NULL);
 
   if(wannastartui || !prompt) ui_init();
+  
+  iqtest();
 
   context[0]=emptytoken;
   int promptlgt=0;

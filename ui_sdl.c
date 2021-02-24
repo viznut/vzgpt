@@ -24,8 +24,9 @@ int autorun_nextshot=0;
 
 void ui_refresh();
 
-int utf8inc(unsigned char*s)
+int utf8inc(char*s0)
 {
+  unsigned char*s=(unsigned char*)s0;
   if(*s<=0x7f) return 1;
   if(!s[1]) return 1;
   if(*s<=0xdf) return 2;
@@ -35,8 +36,9 @@ int utf8inc(unsigned char*s)
   return 4;
 }
 
-int utf8get(unsigned char*s)
+int utf8get(char*s0)
 {
+  unsigned char*s=(unsigned char*)s0;
   if(*s<=0x7f) return *s;
   if(!s[1]) return *s;
   if(*s<=0xdf) return ((s[0]&0x1f)<<6)|(s[1]&0x3f);
@@ -51,7 +53,7 @@ int utf8strlen(char*s)
 {
   int i;
   int ctr=0;
-  char*s1=s+strlen(s);
+  char*s1=s+strlen((char*)s);
   while(s<s1)
   {
     s+=utf8inc(s);
@@ -298,7 +300,7 @@ void rendercontext(int x0,int y0,int zoom)
 
     // word vector for token
     if(!smallchange)
-      renderwordvec(getwv(context[i]),x,y,zoom);
+      renderwordvec_pkd(getwv(context[i]),x,y,zoom);
     y+=64;
 
     // layernodes
@@ -365,7 +367,7 @@ void matchlist_render(int x0,int y0,int w)
   }
 }
 
-char userinput[1024];
+unsigned char userinput[1024];
 void userinput_addchar(int c)
 { 
   int s=strlen(userinput);
@@ -452,28 +454,13 @@ void update_matchlist()
 
 void copy_to_currwv()
 {
+  int i;
   int token=context[cursor_slot];
-  float*src=getwv(token); //wte+WVSIZE*token;
-  memcpy(currwv,src,WVSIZE*sizeof(float));
+  pkdflt*src=getwv(token);
+  for(i=0;i<WVSIZE;i++) currwv[i]=UNPKWTE(src[i]);
   update_matchlist();
   matchlist_visible=1;
   cursor_match=0;
-}
-
-void copy_to_currwv_mix()
-{
-  int token0=context[cursor_slot];
-  int token1=context[cursor_slot+1];
-  int token2=context[cursor_slot+2];
-  float*src0=wte+WVSIZE*token0;
-  float*src1=wte+WVSIZE*token1;
-  float*src2=wte+WVSIZE*token2;
-  int i;
-//  float c=2*(((rand()&65535)/32768.0)-1.0);
-  for(i=0;i<WVSIZE;i++) currwv[i]=src0[i]-src1[i]+src2[i];//*c+src1[i]*(1.0-c);
-  update_matchlist();
-  cursor_match=-1;
-  matchlist_visible=1;
 }
 
 void paste_currwv()
@@ -509,7 +496,7 @@ void mix_tagged()
     int t=context[i];
     float mul=context_tags[i];
     n+=context_tags[i];
-    for(j=0;j<768;j++) sum[j]+=mul*wte[t*768+j];
+    for(j=0;j<768;j++) sum[j]+=mul*UNPKWTE(wte[t*768+j]);
   }
   n=abs(n);
   if(!n) n=1;
@@ -531,7 +518,7 @@ void randomize_wv()
     int t=context[i];
     for(j=0;j<768;j++)
     {
-      float a=wte[t*768+j];
+      float a=UNPKWTE(wte[t*768+j]);
       if(a<min[j]) min[j]=a;
       if(a>max[j]) max[j]=a;
     }
@@ -603,7 +590,7 @@ void ui_init()
   attentions=malloc(CTXSIZE*NUMLAYERS*NUMHEADS*sizeof(float));
   outputcache=malloc(CTXSIZE*WVSIZE*sizeof(float));
   context_tags=malloc(CTXSIZE*sizeof(char));
-  userwte=malloc(WVSIZE*MAXUSERTOKENS*sizeof(float));
+  userwte=malloc(WVSIZE*MAXUSERTOKENS*sizeof(wte_t));
   memset(outputcache,0,CTXSIZE*WVSIZE*sizeof(float));
   memset(attentions,0,CTXSIZE*NUMLAYERS*NUMHEADS*sizeof(float));
   //fprintf(stderr,"emptytoken=%d\n",emptytoken);
