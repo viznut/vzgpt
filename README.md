@@ -6,6 +6,7 @@ OpenAI.
 
 Features:
 - CPU-only calculation one token at a time.
+- Automatic 16-bit quantization of the bulk of the parameters to save memory
 - Multithreading supported via pthreads.
 - Commandline UI to generate text from a given prompt.
 - Terminal and SDL UIs to run the network more interactively.
