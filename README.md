@@ -4,9 +4,13 @@ This is my C-only implementation of GPT-2 inference, mostly intended for my
 own learning and toying. GPT-2 is the neural language model developed at
 OpenAI.
 
+This is mainly for my own use. I suppose Fabrice Bellard's gpt2tc is a
+more mature implementation: https://bellard.org/libnc/gpt2tc.html
+
 Features:
 - CPU-only calculation one token at a time.
-- Automatic 16-bit quantization of the bulk of the parameters to save memory
+- Automatic 16-bit quantization of the bulk of the parameters to save memory.
+- Packed mmap()able single-file model format to speed up loading.
 - Multithreading supported via pthreads.
 - Commandline UI to generate text from a given prompt.
 - Terminal and SDL UIs to run the network more interactively.
