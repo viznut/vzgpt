@@ -106,8 +106,6 @@ void ttyui_matchlist()
   }
 }
 
-#define NUMVARS 5
-
 void ttyui_settings()
 {
   char buf[20];
@@ -130,6 +128,39 @@ void ttyui_settings()
     *((int*)settingvars[i].ptr)=strtol(buf,NULL,10);
   else
     *((float*)settingvars[i].ptr)=strtof(buf,NULL);
+}
+
+void glitchvar(float*v)
+{
+//  *v*=(4+((rand()&65535)/32768.0))/5.0;
+  *v*=((rand()&65535)/32768.0);
+//  *v*=(((rand()&65535)/32768.0)-0.1); // sittenkin toisenlainen tulos tällä
+}
+
+void glitchvar2(float*v)
+{
+  *v=0;//((rand()&65535)/32768.0)-1.0;
+//  *v=0-*v;
+}
+
+void glitchkv(int l)
+{
+  int i,j;
+  for(i=0;i<=currslot;i++)
+  {
+    if(i&15)
+    for(j=0;j<WVSIZE;j++)
+    {
+      glitchvar(&layers[l].k[i*WVSIZE+j]);
+      glitchvar(&layers[l].v[i*WVSIZE+j]);
+    }
+    else
+    for(j=0;j<WVSIZE;j++)
+    {
+      glitchvar2(&layers[l].k[i*WVSIZE+j]);
+      glitchvar2(&layers[l].v[i*WVSIZE+j]);
+    }
+  }
 }
 
 void ttyui()
@@ -181,6 +212,7 @@ void ttyui()
         "m: show matches\n"
         "s: settings\n"
         "h: help\n"
+        "G: glitch k&v\n"
         "q: quit"
         /* TODO: f: set logfile */
       );
@@ -190,6 +222,26 @@ void ttyui()
     {
       fputc('\n',stderr);
       exit(0);
+    }
+    if(c=='G')
+    {
+      printf("glitch layer (00..%02d / *=all) >",NUMLAYERS-1);
+      fflush(stdout);
+      int n;
+      n=getch();
+      if(n=='*')
+      {
+        int l;
+        for(l=0;l<NUMLAYERS;l++) glitchkv(l);
+      } else
+      {
+        n=(n-'0')*10;
+        n*=10;
+        n+=getch()-'0';
+        if(n>=0 && n<NUMLAYERS) glitchkv(n);
+          else printf("illegal layer number!");
+      }
+      printf("\n");
     }
   }
   getch();

@@ -1,9 +1,10 @@
 #define HAVE_THREADS
 #define HAVE_SDL
+#define HAVE_MMAP
 #define ENABLE_SDLUI
 #define ENABLE_TTYUI
 /* Still slightly buggy
-//#define #CONSTS_AS_VARS
+//#define CONSTS_AS_VARS
 */
 
 /* more or less constant values */

@@ -1,12 +1,21 @@
+#include "config.h"
+#ifdef HAVE_SDL
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
-#include "config.h"
+#include <string.h>
+#include <sys/stat.h>
+#ifdef HAVE_MMAP
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#endif
 
 #ifdef __MAIN__
 #define global
@@ -73,13 +82,45 @@ typedef struct
   int validlgt;
 } context_t;
 
+/* for packed format */
+
+#define FLAG_HAVE_BASES 1
+#define FLAG_HAVE_WTET 2
+#define FLAG_HAVE_SOS 4
+#define FLAG_HAVE_PALETTE 8
+#define FLAG_HAVE_TOKENSTRINGS 16
+#define MTYPE_GPT2 0
+#define MTYPE_IGPT 1
+#define PFMT_FLOAT32 0
+#define PFMT_BF16 1
+#define PFMT_IEEE16 2
+#define PFMT_INT16 3
+#define PFMT_INT8 4
+
+typedef struct
+{
+  char fileformat[4];
+  uint32_t wvsize; 
+  uint32_t numlayers;
+  uint32_t numheads;
+  uint32_t numtokens;
+  uint32_t ctxsize;
+  uint32_t headsize;
+  char flags;
+  char paramformat;
+  char wteformat;
+  char reserved0;
+  float quanter_wte;
+} header_t;
+
 /* vocabulary & word vector handling */
 global int numtokens;
 global int nummodeltokens;
 global char**tokenstrings; /* alloc in loadtokens() */
-global float*currwv;      /* alloc in init() */
+global float*currwv;       /* alloc in init() */
 global match_t*matchlist;  /* alloc in init() */
 global char*tokenflags;    /* alloc in loadtokens() */
+global token_t*tokenrepls; /* alloc in flagTokenForReplace() */
 global float*targetwv;
 global token_t emptytoken; /* set in init() */
 global char*tokendata;     /* alloc in loadtokens() */
@@ -92,6 +133,7 @@ global volatile int genstart;
 global volatile int genend;
 
 /* model */
+global header_t*h;
 global char*modelpath;
 global wte_t*wte;
 global pkdflt*wpe;
@@ -123,6 +165,7 @@ global float quanter_wte;
 
 /* settings */
 global float temperature;
+global float temperature_alt;
 global float minp;
 global float minp_for_tagged; /* not used (yet?) */
 global int nummatches;
@@ -138,6 +181,7 @@ global struct
 #ifdef __MAIN__
 ={
   { "temperature", &temperature, 0 },
+  { "temperature_alt", &temperature_alt, 0 },
   { "minp", &minp, 0 },
   { "nummatches", &nummatches, 1 },
   { "genend", &genend, 1 },
@@ -145,17 +189,23 @@ global struct
 }
 #endif
 ;
+#define NUMVARS 5
 
 /* visualization for ui */
 global float*attentions;
 global float*outputcache;
 
 /* ui */
+#ifdef HAVE_SDL
+#ifdef ENABLE_SDLUI
 global SDL_Surface*fb;
 global int scrw,scrh;
+#endif
+#endif
 
 /* functions */
 void*readfile(char*fn,int*lgt_ret,char*path);
+char*readtextfile(char*fn,char*path);
 void runModel(float*x,int slot);
 void renderwordvec(float*wv0,int x0,int y0,int dim);
 void renderlayernode(float*wv,float*att,int numheads,int x0,int y0);
@@ -164,6 +214,35 @@ int pickmatch(match_t*list,int sz,float minp);
 wte_t*getwv(int token);
 void clearcontext(int i);
 void purgeoldcontext(int p);
+int loadtokens_from_tokendata(char*tokendata,int numtokens);
+
+/* markov chain */
+
+#if (0)
+typedef struct _prob_t
+{
+  token_t t;
+  int freq;
+  _prob_t*lt;
+  _prob_t*gt;
+} prob_t;
+
+typedef struct _markovnode_t
+{
+  token_t t;
+  _markovnode_t*lt;
+  _markovnode_t*gt;
+  _markovnode_t*next;
+  prob_t*probs;
+} markovnode_t;
+
+markovnode_t*markovchain;
+
+prob_t*markov_getprobs(markovnode_t*tree,token_t*ctx);
+markovnode_t*markov_import(markovnode_t*tree,char*s,int ctxlgt);
+int pickMatchWithMarkov(match_t*list,int sz,int slot);
+#endif
+// void markov_compress(markovnode_t*tree);
 
 /*inline float conv1dline(float a,float*v,float*m,int wdt);*/
 
