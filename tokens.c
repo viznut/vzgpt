@@ -6,6 +6,23 @@
 
 /*** load the token dictionary (for normal text-based gpt-2 models) ***/
 
+int loadtokens_from_tokendata(char*tokendata,int numtoks)
+{
+  char*s=tokendata;
+  tokenstrings=malloc((numtoks+1+MAXUSERTOKENS)*sizeof(char*));
+  int i=0;
+  while(i<numtoks)
+  {
+    tokenstrings[i]=s;
+    s+=strlen(s)+1;
+    i++;
+  }
+  tokenstrings[i]=NULL;
+  fprintf(stderr,"%d tokenstrings retrieved\n",i);
+  numtokens=i;
+  return 0;
+}
+
 int loadtokens(char*path)
 {
   int tokendatalgt;
@@ -15,27 +32,14 @@ int loadtokens(char*path)
     fprintf(stderr,"couldn't load tokens.dat...\n");
     return 1;
   }
-
-  numtokens=0;
   char*s=tokendata;
+  int numtoks=0;
   while(s<tokendata+tokendatalgt)
   {
     s+=strlen(s)+1;
-    numtokens++;
+    numtoks++;
   }
-
-  tokenstrings=malloc((numtokens+1+MAXUSERTOKENS)*sizeof(char*));
-  s=tokendata;
-  int i=0;
-  while(s<tokendata+tokendatalgt)
-  {
-    tokenstrings[i]=s;
-    s+=strlen(s)+1;
-    i++;
-  }
-  tokenstrings[i]=NULL;
-  fprintf(stderr,"%d tokens retrieved\n",i);
-  return 0;
+  return loadtokens_from_tokendata(tokendata,numtoks);
 }
 
 /*** load the color palette (for imagegpt models) ***/
@@ -208,6 +212,7 @@ int (matchToTokens_cmp)(const void*a,const void*b)
 void matchToTokens(float*wv,match_t*o,int num,float temp) // outputs tuples of (dist,token)
 {
   int i,j;
+//  fprintf(stderr,"numtokens=%d\n",numtokens);
   match_t*t=malloc(sizeof(match_t)*numtokens);
 
 #ifdef USE_PKD_WTE
@@ -301,7 +306,7 @@ int pickmatch_(match_t*list,int sz,float minp)
     if(tokenflags[t]==1 && list[i].prob>0.002)
     {
       tokenflags[t]=0;
-      fprintf(stderr,"<>");
+      //fprintf(stderr,"<>");
       return i;
     }
   }
@@ -316,13 +321,24 @@ int pickmatch_(match_t*list,int sz,float minp)
   return 0;
 }
 
+int replacetoken(int t)
+{
+  if(tokenflags[t]==4 || tokenflags[t]==5)
+  {
+    if(tokenflags[t]==4) tokenflags[t]=0;
+    t=tokenrepls[t];
+    fprintf(stderr,"<R>");
+  }
+  return t;
+}
+
 int pickmatch(match_t*list,int sz,float minp)
 {
   int i=pickmatch_(list,sz,minp);
   int t=list[i].tok;
   while(tokenflags[t]==2)
   {
-    fprintf(stderr,"<!%s>",tokenstrings[t]);
+    //fprintf(stderr,"<!%s>",tokenstrings[t]);
     tokenflags[t]=0;
     i=pickmatch_(list,sz,minp);
     t=list[i].tok;

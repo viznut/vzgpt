@@ -1,5 +1,8 @@
 #include "common.h"
 
+#ifdef HAVE_SDL
+#ifdef ENABLE_SDLUI
+
 int fixedseed=1612634278;
 
 char*font; // alloc in init()
@@ -354,7 +357,7 @@ void matchlist_render(int x0,int y0,int w)
 
     char bf[80];
     int t=matchlist[i].tok;
-    if(!smallchange) renderwordvec(getwv(t),x0+6,y,32);
+    if(!smallchange) renderwordvec_pkd(getwv(t),x0+6,y,32);
     sprintf(bf,"%3.f%%",matchlist[i].prob*100.0);
     rendertext(bf,x0+40,y,0xfffff,0x333333,0);
     {int fg=0xffffff,bg=0x333333;
@@ -539,20 +542,6 @@ void randomize_wv()
 }
 
 // //
-
-void purgeoldcontext(int p)
-{
-  int i,j;
-
-  for(i=0;i<CTXSIZE;i++)
-    context[i]=i+p<CTXSIZE?context[i+p]:emptytoken;
-
-  if(context_tags)
-  for(i=0;i<CTXSIZE;i++)
-    context_tags[i]=i+p<CTXSIZE?context_tags[i+p]:0;
-
-  // TODO copy k&v, clear rest of k&v
-}
 
 void autorun_shot()
 {
@@ -868,3 +857,6 @@ void ui_run()
   SDL_Quit();
   uirunning=0;
 }
+
+#endif
+#endif
