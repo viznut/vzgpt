@@ -130,14 +130,14 @@ int loadpackedmodel(char*path)
   }
   wteparamsz=2;
   quanter_wte=h->quanter_wte;
-  fprintf(stderr,"quanter_wte=%f\n",quanter_wte);
+  //fprintf(stderr,"quanter_wte=%f\n",quanter_wte);
 
   wte=m; m+=wteparamsz*numtokens*WVSIZE;
   wpe=m; m+=paramsz*CTXSIZE*WVSIZE;
   lnf_g=(pkdflt*)m; m+=paramsz2*WVSIZE;
   if(h->flags&FLAG_HAVE_BASES)
   {
-    fprintf(stderr,"we have bases\n");
+    //fprintf(stderr,"we have bases\n");
     lnf_b=m; m+=paramsz2*WVSIZE;
   }
   if(h->flags&FLAG_HAVE_WTET)
@@ -153,7 +153,7 @@ int loadpackedmodel(char*path)
   layers=malloc(sizeof(hlayer)*NUMLAYERS);
   for(i=0;i<NUMLAYERS;i++)
   {
-    fprintf(stderr,"layer %d starts at %d\n",i,m-(void*)h);
+    //fprintf(stderr,"layer %d starts at %d\n",i,m-(void*)h);
     layers[i].ln1_g=m; m+=paramsz2*WVSIZE;
     layers[i].ln2_g=m; m+=paramsz2*WVSIZE;
     layers[i].mlp_cfc_w=m; m+=paramsz*WVSIZE*WVSIZE*4;
@@ -180,8 +180,6 @@ int loadpackedmodel(char*path)
   if(h->flags&FLAG_HAVE_TOKENSTRINGS)
     loadtokens_from_tokendata(m,numtokens);
   fprintf(stderr,"packed model loaded (size %d + tokendata)\n",m-(void*)h);
-  fprintf(stderr,"first tokens: %s %s %s\n",
-    tokenstrings[0],tokenstrings[1],tokenstrings[2]); // oikein
   return 0;
 }
 

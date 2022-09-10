@@ -132,12 +132,13 @@ void generate(int start,int genstart_,int genend_)
     tok=context[currslot];
     if(tok>=0 && currslot<genstart)
     {
-      if(!reloading)
+      if(!reloading || verbose>=1)
       {
-        {
-        int i;
-        float prob=0;
+        //{
+        //int i;
+        //float prob=0;
         // alt: laske tok:in etäisyys currwv:stä
+        /*
         matchToTokens(prevwv,matchlist,nummatches,1.0);
         for(i=0;i<nummatches;i++)
           if(matchlist[i].tok==tok) { prob=matchlist[i].prob; break; }
@@ -149,23 +150,15 @@ void generate(int start,int genstart_,int genend_)
         memcpy(prevwv,currwv,WVSIZE*sizeof(float));
         //printf("\033[%dm%s",36+(currslot&1),tokenstrings[tok]);
         }
+        */
         printf("%s",tokenstrings[tok]);
-        printf("\033[0m");
+        //printf("\033[0m");
         fflush(stdout);
       }
-      else
-        if(verbose>=1) fprintf(stderr,"%s",tokenstrings[tok]);
+      //else
+      //  if(verbose>=1) fprintf(stderr,"%s",tokenstrings[tok]);
     }
     currslot++;
-    if(currslot==genstart) // !!! TESTING
-    {
-      int i;
-//      for(i=1;i<6;i++) glitchkv(i);
-      glitchkv(5);
-//      glitchkv(1);
-//      glitchkv(35);
-      srand(36879);
-    }
     if(currslot>=genstart)
     {
       int match;
@@ -186,7 +179,7 @@ void generate(int start,int genstart_,int genend_)
     {
       purgeoldcontext(CTXSIZE/2);
       currslot=0;
-      genstart=CTXSIZE/2-2;
+      genstart=CTXSIZE/2-1; // was -2, todo test
       reloading=1;
     }
     if(breaks_called)
@@ -541,6 +534,7 @@ int main(int argc,char**argv)
             "-b          run benchmark\n"
             "-v          verbose/debug output\n"
             "-Z file.vzg write packed model to disk\n"
+            "-L          start lua interpreter\n"
             ,argv[0]);
           exit(1);
         }
@@ -566,7 +560,9 @@ int main(int argc,char**argv)
             packedfiletosave=argv[++i];
         }
         if(*s=='H')
-          wannastartui=66;
+          wannastartui=3;
+        if(*s=='L')
+          wannastartui=2;
         if(*s=='u')
           wannastartui=1;
         if(*s=='v')
@@ -620,7 +616,13 @@ int main(int argc,char**argv)
 //  analyzetokens();
 //  exit(0);
 
-  if(wannastartui==66)
+  if(wannastartui==2)
+  {
+    vzlua(NULL);
+    return 0;
+  }
+
+  if(wannastartui==3)
   {
     http_server();
     return 0;
