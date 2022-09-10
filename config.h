@@ -1,8 +1,10 @@
 #define HAVE_THREADS
 #define HAVE_SDL
 #define HAVE_MMAP
+#define HAVE_LUA
 #define ENABLE_SDLUI
 #define ENABLE_TTYUI
+//#define USE_LIBEDIT
 /* Still slightly buggy
 //#define CONSTS_AS_VARS
 */

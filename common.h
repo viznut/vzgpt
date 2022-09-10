@@ -215,6 +215,7 @@ wte_t*getwv(int token);
 void clearcontext(int i);
 void purgeoldcontext(int p);
 int loadtokens_from_tokendata(char*tokendata,int numtokens);
+void vzlua(char*scriptfile);
 
 /* markov chain */
 
